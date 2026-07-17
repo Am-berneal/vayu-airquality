@@ -2,12 +2,25 @@ import os
 import time
 import requests
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from google import genai
+from pydantic import BaseModel
+from typing import Optional
+import uuid
+from datetime import datetime
 
 load_dotenv()
 
 app = FastAPI(title="VAYU Backend")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 CPCB_API_KEY = os.getenv("CPCB_API_KEY")
 OWM_API_KEY = os.getenv("OWM_API_KEY")
@@ -157,3 +170,52 @@ def get_advisory(area: str = "Chandigarh", aqi: int = 150, language: str = "Engl
         return {"area": area, "aqi": aqi, "language": language, "advisory": response.text}
     except Exception as e:
         return {"error": str(e)}
+
+
+class ReportSubmission(BaseModel):
+    place_name: str
+    description: str
+    state: str
+    district: Optional[str] = None
+    area: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+reports_db = []
+
+def calculate_priority(aqi: int) -> str:
+    if aqi >= 400:
+        return "Urgent"
+    elif aqi >= 300:
+        return "High"
+    elif aqi >= 200:
+        return "Medium"
+    else:
+        return "Low"
+
+@app.post("/reports")
+def submit_report(report: ReportSubmission):
+    report_id = f"CHD-2026-{str(uuid.uuid4())[:4].upper()}"
+    simulated_aqi = 250
+
+    new_report = {
+        "id": report_id,
+        "area": report.place_name,
+        "description": report.description,
+        "state": report.state,
+        "district": report.district,
+        "aqi": simulated_aqi,
+        "priority": calculate_priority(simulated_aqi),
+        "source": "Pending Analysis",
+        "status": "Pending",
+        "reported_date": datetime.now().strftime("%b %d, %I:%M %p"),
+    }
+    reports_db.append(new_report)
+    return {"success": True, "report_id": report_id, "report": new_report}
+
+
+@app.get("/reports")
+def get_reports():
+    sorted_reports = sorted(reports_db, key=lambda r: r["aqi"], reverse=True)
+    return {"count": len(sorted_reports), "reports": sorted_reports}
+

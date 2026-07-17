@@ -5,11 +5,31 @@ function ReportIssueForm() {
   const [placeName, setPlaceName] = useState("");
   const [description, setDescription] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [reportId, setReportId] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Later: POST to backend /reports endpoint
-    setSubmitted(true);
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          place_name: placeName,
+          description: description,
+          state: "Chandigarh",
+        }),
+      });
+      const data = await response.json();
+      setReportId(data.report_id);
+      setSubmitted(true);
+    } catch (err) {
+      console.error("Failed to submit report:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -20,7 +40,7 @@ function ReportIssueForm() {
             Report Submitted
           </p>
           <p className="text-gray-500 text-sm">
-            Report ID #CHD-2026-{Math.floor(1000 + Math.random() * 9000)} — we'll notify you on the status.
+            Report ID #{reportId} — we'll notify you on the status.
           </p>
         </div>
       </div>
@@ -83,9 +103,10 @@ function ReportIssueForm() {
 
         <button
           type="submit"
-          className="w-full bg-teal-800 hover:bg-teal-900 text-white font-medium py-2.5 rounded-lg"
+          disabled={loading}
+          className="w-full bg-teal-800 hover:bg-teal-900 text-white font-medium py-2.5 rounded-lg disabled:opacity-50"
         >
-          Submit Report
+          {loading ? "Submitting..." : "Submit Report"}
         </button>
       </form>
     </div>

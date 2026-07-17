@@ -1,28 +1,4 @@
-import { useState } from "react";
-
-const dummyReports = [
-  {
-    area: "Okhla Industrial Area",
-    aqi: 420,
-    reportedDate: "Today, 09:15 AM",
-    priority: "Urgent",
-    source: "Factory Emission",
-  },
-  {
-    area: "Anand Vihar",
-    aqi: 385,
-    reportedDate: "Yesterday, 10:30 PM",
-    priority: "High",
-    source: "Construction Dust",
-  },
-  {
-    area: "Dwarka Sector 21",
-    aqi: 210,
-    reportedDate: "Oct 12, 11:00 AM",
-    priority: "Medium",
-    source: "Vehicle Exhaust",
-  },
-];
+import { useState, useEffect } from "react";
 
 const priorityStyles = {
   Urgent: "bg-red-50 text-red-600",
@@ -34,10 +10,25 @@ const priorityStyles = {
 function OfficerReportsTable({ onReviewClick }) {
   const [filter, setFilter] = useState("All Priorities");
 
+  const [reports, setReports] = useState([]);
+
+  useEffect(() => {
+    const fetchReports = () => {
+      fetch("http://127.0.0.1:8000/reports")
+        .then((res) => res.json())
+        .then((data) => setReports(data.reports || []))
+        .catch((err) => console.error("Failed to fetch reports:", err));
+    };
+
+    fetchReports();
+    const interval = setInterval(fetchReports, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const filtered =
     filter === "All Priorities"
-      ? dummyReports
-      : dummyReports.filter((r) => r.priority === filter);
+      ? reports
+      : reports.filter((r) => r.priority === filter);
 
   return (
     <div className="p-6">
@@ -75,7 +66,7 @@ function OfficerReportsTable({ onReviewClick }) {
               <tr key={idx} className="border-b border-gray-50 last:border-0">
                 <td className="px-6 py-4 font-medium text-gray-800">{r.area}</td>
                 <td className="px-6 py-4 text-red-500 font-semibold">{r.aqi}</td>
-                <td className="px-6 py-4 text-gray-500">{r.reportedDate}</td>
+                <td className="px-6 py-4 text-gray-500">{r.reported_date}</td>
                 <td className="px-6 py-4">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${priorityStyles[r.priority]}`}>
                     {r.priority}
