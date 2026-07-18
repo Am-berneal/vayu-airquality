@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, Circle, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import Sidebar from "./Sidebar";
 import OfficerReportsTable from "./OfficerReportsTable";
 import AIReviewPanel from "./AIReviewPanel";
 import ReportIssueForm from "./ReportIssueForm";
+import PredictiveAnalysis from "./PredictiveAnalysis";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -13,7 +14,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// ---- Location data with bounding boxes: [[southWestLat, southWestLng], [northEastLat, northEastLng]] ----
 const locationData = {
   Chandigarh: {
     bounds: [[30.68, 76.72], [30.77, 76.83]],
@@ -24,6 +24,9 @@ const locationData = {
           "Sector 22 (Live Station)": { bounds: [[30.7306, 76.7707], [30.7406, 76.7807]], coords: [30.735567, 76.775714] },
           "Sector 25 (Live Station)": { bounds: [[30.7465, 76.7579], [30.7565, 76.7679]], coords: [30.751462, 76.762879] },
           "Sector 53 (Live Station)": { bounds: [[30.7149, 76.7336], [30.7249, 76.7436]], coords: [30.719859, 76.738637] },
+          "Sector 17": { bounds: [[30.725, 76.775], [30.735, 76.785]], coords: [30.73, 76.78] },
+          "Sector 34": { bounds: [[30.7144, 76.7597], [30.7244, 76.7697]], coords: [30.7194, 76.7647] },
+          "Sector 36": { bounds: [[30.700, 76.712], [30.709, 76.722]], coords: [30.7046, 76.7179] },
         },
       },
     },
@@ -63,7 +66,69 @@ const locationData = {
 
 const INDIA_BOUNDS = [[6.5, 68.0], [35.5, 97.5]];
 
-// ---- Controls the map's zoom/fit and pan restriction based on current selection ----
+function getKnownStations() {
+  const result = [];
+  Object.values(locationData).forEach((stateObj) => {
+    Object.values(stateObj.districts).forEach((distObj) => {
+      Object.entries(distObj.areas).forEach(([areaName, areaObj]) => {
+        if (areaName.includes("Live Station")) {
+          result.push({ name: areaName, coords: areaObj.coords });
+        }
+      });
+    });
+  });
+  return result;
+}
+
+const KNOWN_STATIONS = getKnownStations();
+
+function findMatchingStationData(name, stations) {
+  const match = name.match(/Sector\s*(\d+)/i);
+  if (!match) return null;
+  const sectorNum = match[1];
+  return stations.find((s) => {
+    if (!s.station) return false;
+    const normalized = s.station.toLowerCase().replace(/[-,]/g, " ");
+    const numMatch = normalized.match(/sector\s*(\d+)/i);
+    return numMatch && numMatch[1] === sectorNum;
+  });
+}
+
+function distanceKm(a, b) {
+  const R = 6371;
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const dLon = ((b[1] - a[1]) * Math.PI) / 180;
+  const lat1 = (a[0] * Math.PI) / 180;
+  const lat2 = (b[0] * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function estimateBaselineAQI(targetCoords, stations) {
+  const weighted = [];
+  KNOWN_STATIONS.forEach((ks) => {
+    const matched = findMatchingStationData(ks.name, stations);
+    if (matched?.computed_aqi) {
+      const dist = distanceKm(targetCoords, ks.coords);
+      const weight = 1 / Math.max(dist, 0.1);
+      weighted.push({ value: matched.computed_aqi, weight });
+    }
+  });
+  if (weighted.length === 0) return null;
+  const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0);
+  const weightedSum = weighted.reduce((sum, w) => sum + w.value * w.weight, 0);
+  return Math.round((weightedSum / totalWeight) * 10) / 10;
+}
+
+function aqiColor(aqi) {
+  if (aqi <= 50) return "#00b050";
+  if (aqi <= 100) return "#a8d600";
+  if (aqi <= 200) return "#ffd400";
+  if (aqi <= 300) return "#ff8c00";
+  if (aqi <= 400) return "#e53e3e";
+  return "#800000";
+}
+
 function MapBoundsController({ bounds, locked, onAnimatingChange }) {
   const map = useMap();
 
@@ -101,54 +166,11 @@ function MapResizeFix() {
   return null;
 }
 
-// ---- AQI color helper for the hover circle ----
-function aqiColor(aqi) {
-  if (aqi <= 50) return "#00b050";
-  if (aqi <= 100) return "#a8d600";
-  if (aqi <= 200) return "#ffd400";
-  if (aqi <= 300) return "#ff8c00";
-  if (aqi <= 400) return "#e53e3e";
-  return "#800000";
-}
-
-// Pulls out every sector marked "(Live Station)" from locationData, across all states/districts
-function getKnownStations() {
-  const result = [];
-  Object.values(locationData).forEach((stateObj) => {
-    Object.values(stateObj.districts).forEach((distObj) => {
-      Object.entries(distObj.areas).forEach(([areaName, areaObj]) => {
-        if (areaName.includes("Live Station")) {
-          result.push({ name: areaName, coords: areaObj.coords });
-        }
-      });
-    });
-  });
-  return result;
-}
-
-const KNOWN_STATIONS = getKnownStations();
-
-// Matches a known sector (e.g. "Sector 25 (Live Station)") to real backend data by sector number
-function findMatchingStationData(name, stations) {
-  const match = name.match(/Sector\s*(\d+)/i);
-  if (!match) return null;
-  const sectorNum = match[1];
-
-  return stations.find((s) => {
-    if (!s.station) return false;
-    const normalized = s.station.toLowerCase().replace(/[-,]/g, " ");
-    const numMatch = normalized.match(/sector\s*(\d+)/i);
-    return numMatch && numMatch[1] === sectorNum;
-  });
-}
-
 function DashboardMap({ activeBounds, isLocked, stations }) {
   const [isAnimating, setIsAnimating] = useState(false);
+
   return (
-    <div
-      className="flex-1 m-6 rounded-2xl overflow-hidden border border-gray-200"
-      style={{ minHeight: "450px" }}
-    >
+    <div className="flex-1 m-6 rounded-2xl overflow-hidden border border-gray-200" style={{ minHeight: "450px" }}>
       <MapContainer
         center={[20.5937, 78.9629]}
         zoom={5}
@@ -169,36 +191,22 @@ function DashboardMap({ activeBounds, isLocked, stations }) {
           const lng = parseFloat(station.longitude);
           if (isNaN(lat) || isNaN(lng)) return null;
 
-          const pm25 = station.pollutants?.["PM2.5"]?.avg;
-          const aqiValue = pm25 ? Math.round(parseFloat(pm25)) : null;
-          const color = aqiValue ? aqiColor(aqiValue) : "#3b82f6";
-
           return (
-            <React.Fragment key={idx}>
-              
-              <Marker position={[lat, lng]}>
-                <Tooltip direction="top" offset={[0, -8]} opacity={1} sticky>
-                  <div className="text-xs">
-                    <strong>{station.station}</strong>
-                    <br />
-                    AQI (PM2.5): {aqiValue ?? "N/A"}
-                  </div>
-                </Tooltip>
-                <Popup>
-                  <strong>{station.station}</strong>
-                  <br />
-                  {Object.entries(station.pollutants || {}).map(([name, vals]) => (
-                    <div key={name}>{name}: {vals.avg}</div>
-                  ))}
-                </Popup>
-              </Marker>
-            </React.Fragment>
+            <Marker key={idx} position={[lat, lng]}>
+              <Popup>
+                <strong>{station.station}</strong>
+                <br />
+                {Object.entries(station.pollutants || {}).map(([name, vals]) => (
+                  <div key={name}>{name}: {vals.avg}</div>
+                ))}
+              </Popup>
+            </Marker>
           );
         })}
+
         {!isAnimating && KNOWN_STATIONS.map((ks, idx) => {
           const matched = findMatchingStationData(ks.name, stations);
-          const pm25 = matched?.pollutants?.["PM2.5"]?.avg;
-          const aqiValue = pm25 ? Math.round(parseFloat(pm25)) : null;
+          const aqiValue = matched?.computed_aqi ?? null;
           const color = aqiValue ? aqiColor(aqiValue) : "#9ca3af";
 
           return (
@@ -211,8 +219,8 @@ function DashboardMap({ activeBounds, isLocked, stations }) {
               <Tooltip direction="top" offset={[0, -10]} opacity={1} sticky>
                 <div className="text-xs">
                   <strong>{ks.name}</strong>
-                  <br />
-                  AQI (PM2.5): {aqiValue ?? "Data unavailable"}
+                  <br/>
+                  AQI: {aqiValue ?? "Data unavailable"}
                 </div>
               </Tooltip>
             </Circle>
@@ -238,7 +246,6 @@ function DashboardShell({ role = "citizen" }) {
       ? Object.keys(locationData[selectedState].districts[selectedDistrict].areas)
       : [];
 
-  // Determine which bounds to zoom to, based on the deepest selection made
   let activeBounds = null;
   if (selectedState && selectedDistrict && selectedArea) {
     activeBounds = locationData[selectedState].districts[selectedDistrict].areas[selectedArea].bounds;
@@ -248,17 +255,30 @@ function DashboardShell({ role = "citizen" }) {
     activeBounds = locationData[selectedState].bounds;
   }
 
-  const isLocked = Boolean(selectedState); // lock as soon as any level is picked
+  const isLocked = Boolean(selectedState);
+
+  const selectedAreaData =
+    selectedState && selectedDistrict && selectedArea
+      ? locationData[selectedState].districts[selectedDistrict].areas[selectedArea]
+      : null;
+
+  const isAreaMonitored = selectedArea.includes("Live Station");
+
+  const baselineAQI = selectedAreaData
+    ? isAreaMonitored
+      ? (() => {
+          const matched = findMatchingStationData(selectedArea, stations);
+          return matched?.computed_aqi ?? null;
+        })()
+      : estimateBaselineAQI(selectedAreaData.coords, stations)
+    : null;
 
   useEffect(() => {
-  if (!selectedState) return;
-  fetch(`http://127.0.0.1:8000/stations?state=${selectedState}`)
-    .then((res) => res.json())
-    .then((data) => {
-      console.log("RAW STATIONS DATA:", data.stations);
-      setStations(data.stations || []);
-    })
-    .catch((err) => console.error("Failed to fetch stations:", err));
+    if (!selectedState) return;
+    fetch(`http://127.0.0.1:8000/stations?state=${selectedState}`)
+      .then((res) => res.json())
+      .then((data) => setStations(data.stations || []))
+      .catch((err) => console.error("Failed to fetch stations:", err));
   }, [selectedState]);
 
   const handleReviewClick = (report) => {
@@ -270,6 +290,17 @@ function DashboardShell({ role = "citizen" }) {
     if (activePage === "__review__") {
       return <AIReviewPanel report={selectedReport} onBack={() => setActivePage("Home")} />;
     }
+
+    if (activePage === "Predictive Analysis") {
+      return (
+        <PredictiveAnalysis
+          areaLabel={selectedArea || null}
+          baselineAQI={baselineAQI}
+          isMonitored={isAreaMonitored}
+        />
+      );
+    }
+
     if (activePage === "Home" && role === "officer") {
       return (
         <>
@@ -278,9 +309,11 @@ function DashboardShell({ role = "citizen" }) {
         </>
       );
     }
+
     if (activePage === "My Reports" && role === "citizen") {
       return <ReportIssueForm />;
     }
+
     return <DashboardMap activeBounds={activeBounds} isLocked={isLocked} stations={stations} />;
   };
 
@@ -366,3 +399,4 @@ function DashboardShell({ role = "citizen" }) {
 }
 
 export default DashboardShell;
+
