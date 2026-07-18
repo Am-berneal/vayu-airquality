@@ -4,6 +4,7 @@ import {
   Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
 import { Wind, Thermometer, Flame, TrendingUp, TrendingDown, Minus, Radio } from "lucide-react";
+import { API_BASE_URL } from "../config";
 
 function TrendIcon({ trend }) {
   if (trend === "Rising" || trend === "Increasing") {
@@ -28,10 +29,10 @@ function PredictiveAnalysis({ areaLabel, baselineAQI, isMonitored }) {
     setLoading(true);
     setScrubHour(0);
 
-    fetch(`http://127.0.0.1:8000/weather?city=Chandigarh`)
+    fetch(`${API_BASE_URL}/weather?city=Chandigarh`)
       .then((res) => res.json())
       .then((weather) => {
-        return fetch("http://127.0.0.1:8000/predict", {
+        return fetch(`${API_BASE_URL}/predict`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

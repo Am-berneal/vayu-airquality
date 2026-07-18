@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Upload, MapPin } from "lucide-react";
+import { API_BASE_URL } from "../config";
 
 function ReportIssueForm() {
   const [placeName, setPlaceName] = useState("");
@@ -13,7 +14,7 @@ function ReportIssueForm() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/reports", {
+      const response = await fetch(`${API_BASE_URL}/reports`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

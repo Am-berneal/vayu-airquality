@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { AlertTriangle, Send, Loader2 } from "lucide-react";
+import { API_BASE_URL } from "../config";
 
 function AIReviewPanel({ report, onBack }) {
   const [notes, setNotes] = useState("");
@@ -12,7 +13,7 @@ function AIReviewPanel({ report, onBack }) {
     if (!report) return;
 
     setLoadingAnalysis(true);
-    fetch("http://127.0.0.1:8000/analyze-report", {
+    fetch(`${API_BASE_URL}/analyze-report`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -42,7 +43,7 @@ function AIReviewPanel({ report, onBack }) {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await fetch(`http://127.0.0.1:8000/reports/${report.id}/status`, {
+      await fetch(`${API_BASE_URL}/reports/${report.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "Submitted" }),

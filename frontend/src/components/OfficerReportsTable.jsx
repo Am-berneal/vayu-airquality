@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../config";
 
 const priorityStyles = {
   Urgent: "bg-red-50 text-red-600",
@@ -14,7 +15,7 @@ function OfficerReportsTable({ onReviewClick }) {
 
   useEffect(() => {
     const fetchReports = () => {
-      fetch("http://127.0.0.1:8000/reports")
+      fetch(`${API_BASE_URL}/reports`)
         .then((res) => res.json())
         .then((data) => setReports(data.reports || []))
         .catch((err) => console.error("Failed to fetch reports:", err));
