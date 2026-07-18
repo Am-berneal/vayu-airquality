@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 import uuid
 from datetime import datetime
+import json
 
 load_dotenv()
 
@@ -65,11 +66,25 @@ def get_stations(state: str = "Chandigarh", limit: int = 100):
         "limit": limit,
         "filters[state]": state
     }
-    response = requests.get(CPCB_BASE_URL, params=params)
-    data = response.json()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    response = requests.get(CPCB_BASE_URL, params=params, headers=headers, timeout=15)
+
+    print("CPCB STATUS CODE:", response.status_code)
+    print("CPCB RAW RESPONSE:", response.text[:500])
+
+    try:
+        data = response.json()
+    except Exception as e:
+        return {"error": "CPCB API did not return valid JSON", "status_code": response.status_code, "raw": response.text[:300]}
+
     records = data.get("records", [])
 
     stations = {}
+    for row in records:
+        station_name = row.get("station")
+        
     for row in records:
         station_name = row.get("station")
         if not station_name:
@@ -87,12 +102,12 @@ def get_stations(state: str = "Chandigarh", limit: int = 100):
             }
 
         pollutant_id = row.get("pollutant_id")
-        avg_value = row.get("pollutant_avg")
+        avg_value = row.get("avg_value")
 
         if pollutant_id and avg_value and avg_value != "NA":
             stations[station_name]["pollutants"][pollutant_id] = {
-                "min": row.get("pollutant_min"),
-                "max": row.get("pollutant_max"),
+                "min": row.get("min_value"),
+                "max": row.get("max_value"),
                 "avg": avg_value
             }
 
@@ -218,4 +233,60 @@ def submit_report(report: ReportSubmission):
 def get_reports():
     sorted_reports = sorted(reports_db, key=lambda r: r["aqi"], reverse=True)
     return {"count": len(sorted_reports), "reports": sorted_reports}
+
+class AnalysisRequest(BaseModel):
+    description: str
+    area: str
+    aqi: int
+
+@app.post("/analyze-report")
+def analyze_report(req: AnalysisRequest):
+    prompt = f"""You are an AI environmental enforcement analyst reviewing a citizen-submitted air pollution report for an Indian regulatory officer.
+
+Location: {req.area}
+Current AQI: {req.aqi}
+Citizen's description: "{req.description}"
+
+Analyze this report and respond ONLY with valid JSON (no markdown formatting, no code fences, no extra text before or after) using exactly these fields:
+{{"likely_source": "Industrial, Vehicular, Construction, Agricultural Burning, Residential Burning, or Unknown", "confidence_percent": a number between 0 and 100, "severity": "Low, Medium, High, or Critical", "analysis_summary": "2-3 sentence technical analysis for a government enforcement officer", "recommended_action": "1-2 sentence specific recommended enforcement action"}}"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt
+        )
+        text = response.text.strip()
+
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.lower().startswith("json"):
+                text = text[4:]
+        text = text.strip()
+
+        analysis = json.loads(text)
+        return {"success": True, "analysis": analysis}
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "analysis": {
+                "likely_source": "Unknown",
+                "confidence_percent": 0,
+                "severity": "Medium",
+                "analysis_summary": "AI analysis is temporarily unavailable. Please review the citizen evidence manually.",
+                "recommended_action": "Conduct a manual site inspection before proceeding."
+            }
+        }
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+@app.patch("/reports/{report_id}/status")
+def update_report_status(report_id: str, update: StatusUpdate):
+    for r in reports_db:
+        if r["id"] == report_id:
+            r["status"] = update.status
+            return {"success": True, "report": r}
+    return {"success": False, "error": "Report not found"}
 
