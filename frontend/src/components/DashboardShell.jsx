@@ -6,7 +6,7 @@ import OfficerReportsTable from "./OfficerReportsTable";
 import AIReviewPanel from "./AIReviewPanel";
 import ReportIssueForm from "./ReportIssueForm";
 import PredictiveAnalysis from "./PredictiveAnalysis";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, fetchWithRetry } from "../config";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -276,7 +276,7 @@ function DashboardShell({ role = "citizen" }) {
 
   useEffect(() => {
     if (!selectedState) return;
-    fetch(`${API_BASE_URL}/stations?state=${selectedState}`)
+    fetchWithRetry(`${API_BASE_URL}/stations?state=${selectedState}`)
       .then((res) => res.json())
       .then((data) => setStations(data.stations || []))
       .catch((err) => console.error("Failed to fetch stations:", err));

@@ -72,6 +72,34 @@ function PredictiveAnalysis({ areaLabel, baselineAQI, isMonitored }) {
     );
   }
 
+  if (!areaLabel) {
+    return (
+      <div className="p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-1">Predictive Analysis</h2>
+        <p className="text-sm text-gray-400 mb-6">
+          24-hour AQI forecast and AI-driven insights for your district.
+        </p>
+        <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center text-gray-400 text-sm">
+          Select a State, District, and Area from the dropdowns above to see its forecast.
+        </div>
+      </div>
+    );
+  }
+
+  if (baselineAQI == null) {
+    return (
+      <div className="p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-1">Predictive Analysis</h2>
+        <p className="text-sm text-gray-400 mb-6">
+          24-hour AQI forecast and AI-driven insights for {areaLabel}.
+        </p>
+        <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center text-gray-400 text-sm">
+          Loading live air quality data — this can take up to a minute if the server was recently idle. Please wait a moment.
+        </div>
+      </div>
+    );
+  }
+
   const scrubPoint = forecast[scrubHour];
 
   return (
