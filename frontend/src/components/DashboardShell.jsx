@@ -7,6 +7,9 @@ import AIReviewPanel from "./AIReviewPanel";
 import ReportIssueForm from "./ReportIssueForm";
 import PredictiveAnalysis from "./PredictiveAnalysis";
 import { API_BASE_URL, fetchWithRetry } from "../config";
+import SourceAttribution from "./SourceAttribution";
+import ComingSoon from "./ComingSoon";
+import MyReportsTracker from "./MyReportsTracker";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -25,9 +28,9 @@ const locationData = {
           "Sector 22 (Live Station)": { bounds: [[30.7306, 76.7707], [30.7406, 76.7807]], coords: [30.735567, 76.775714] },
           "Sector 25 (Live Station)": { bounds: [[30.7465, 76.7579], [30.7565, 76.7679]], coords: [30.751462, 76.762879] },
           "Sector 53 (Live Station)": { bounds: [[30.7149, 76.7336], [30.7249, 76.7436]], coords: [30.719859, 76.738637] },
-          "Sector 17": { bounds: [[30.725, 76.775], [30.735, 76.785]], coords: [30.73, 76.78] },
+          "Sector 17": { bounds: [[30.734885, 76.777454], [30.744885, 76.787454]], coords: [30.739885, 76.782454] },
           "Sector 34": { bounds: [[30.7144, 76.7597], [30.7244, 76.7697]], coords: [30.7194, 76.7647] },
-          "Sector 36": { bounds: [[30.700, 76.712], [30.709, 76.722]], coords: [30.7046, 76.7179] },
+          "Sector 36": { bounds: [[30.727069, 76.747785], [30.737069, 76.757785]], coords: [30.732069, 76.752785] },
         },
       },
     },
@@ -302,6 +305,16 @@ function DashboardShell({ role = "citizen" }) {
       );
     }
 
+    if (activePage === "Source Attribution" || activePage === "Why Is My Area Polluted") {
+      return (
+        <SourceAttribution areaLabel={selectedArea || null} aqi={baselineAQI} role={role} />
+      );
+    }
+
+    if (["Health Advisory", "Alerts & Subscriptions", "Community Impact", "Settings"].includes(activePage)) {
+      return <ComingSoon title={activePage} />;
+    }
+
     if (activePage === "Home" && role === "officer") {
       return (
         <>
@@ -312,7 +325,19 @@ function DashboardShell({ role = "citizen" }) {
     }
 
     if (activePage === "My Reports" && role === "citizen") {
-      return <ReportIssueForm />;
+      return <MyReportsTracker onNewReport={() => setActivePage("__new_report__")} />;
+    }
+
+    if (activePage === "__new_report__") {
+      return (
+        <ReportIssueForm
+          onDone={() => setActivePage("My Reports")}
+          state={selectedState || "Chandigarh"}
+          district={selectedDistrict}
+          area={selectedArea}
+          defaultCoords={selectedAreaData?.coords}
+        />
+      );
     }
 
     return <DashboardMap activeBounds={activeBounds} isLocked={isLocked} stations={stations} />;
@@ -322,14 +347,24 @@ function DashboardShell({ role = "citizen" }) {
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar
         role={role}
-        activePage={activePage === "__review__" ? "Home" : activePage}
+        activePage={
+          activePage === "__review__"
+            ? "Home"
+            : activePage === "__new_report__"
+            ? "My Reports"
+            : activePage
+        }
         setActivePage={setActivePage}
       />
 
       <div className="flex-1 flex flex-col">
         <header className="flex items-center justify-between bg-white border-b border-gray-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-800">
-            {activePage === "__review__" ? "AI Review Panel" : activePage}
+            {activePage === "__review__"
+              ? "AI Review Panel"
+              : activePage === "__new_report__"
+              ? "Report an Issue"
+              : activePage}
           </h2>
           <div className="flex items-center gap-2 bg-red-50 text-red-600 px-3 py-1.5 rounded-full text-sm font-medium">
             AQI 240 — Poor

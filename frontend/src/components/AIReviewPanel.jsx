@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { AlertTriangle, Send, Loader2 } from "lucide-react";
+import { AlertTriangle, Send, Loader2, Download } from "lucide-react";
 import { API_BASE_URL } from "../config";
 
 function AIReviewPanel({ report, onBack }) {
@@ -8,6 +8,7 @@ function AIReviewPanel({ report, onBack }) {
   const [analysis, setAnalysis] = useState(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (!report) return;
@@ -56,6 +57,45 @@ function AIReviewPanel({ report, onBack }) {
     }
   };
 
+  const handleGeneratePDF = async () => {
+    setGeneratingPdf(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/generate-evidence-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          report_id: report.id,
+          area: report.area,
+          place_type: report.place_type,
+          description: report.description,
+          aqi: report.aqi,
+          state: report.state,
+          district: report.district,
+          photo_data_url: report.photo_data_url,
+          likely_source: analysis?.likely_source,
+          confidence_percent: analysis?.confidence_percent,
+          severity: analysis?.severity,
+          analysis_summary: analysis?.analysis_summary,
+          recommended_action: analysis?.recommended_action,
+          officer_notes: notes,
+        }),
+      });
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `VAYU_Evidence_${report.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error("Failed to generate PDF:", err);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   if (!report) {
     return <div className="p-6 text-gray-400">No report selected.</div>;
   }
@@ -91,13 +131,22 @@ function AIReviewPanel({ report, onBack }) {
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
           <h3 className="font-semibold text-gray-800 mb-3">📷 Citizen Evidence</h3>
-          <div className="bg-gray-100 rounded-lg h-40 mb-3 flex items-center justify-center text-gray-400 text-sm">
-            Photo/video evidence
-          </div>
+          {report.photo_data_url ? (
+            <img src={report.photo_data_url} alt="Citizen submitted evidence" className="w-full h-40 object-cover rounded-lg mb-3" />
+          ) : (
+            <div className="bg-gray-100 rounded-lg h-40 mb-3 flex items-center justify-center text-gray-400 text-sm">
+              No photo attached
+            </div>
+          )}
+          {report.video_filename && (
+            <p className="text-xs text-gray-400 mb-2">🎥 Video attached: {report.video_filename}</p>
+          )}
           <p className="text-sm text-gray-600">
             {report.description || "No description provided."}
           </p>
-          <p className="text-xs text-gray-400 mt-2">📍 {report.area}</p>
+          <p className="text-xs text-gray-400 mt-2">
+            📍 {report.place_type ? `${report.place_type} — ` : ""}{report.area}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -154,7 +203,15 @@ function AIReviewPanel({ report, onBack }) {
           placeholder="Enter official validation notes and prescribed penalties..."
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm h-24 mb-4 focus:outline-none focus:ring-2 focus:ring-teal-600"
         />
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={handleGeneratePDF}
+            disabled={generatingPdf || loadingAnalysis}
+            className="flex items-center gap-2 bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50"
+          >
+            {generatingPdf ? "Generating..." : "Generate Evidence Package"}
+            <Download size={16} />
+          </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || loadingAnalysis}
