@@ -1,3 +1,19 @@
+import os
+import time
+import requests
+import json
+import math
+import uuid
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
+from google import genai
+from pydantic import BaseModel
+
 import base64
 import io
 from fastapi.responses import StreamingResponse
@@ -123,8 +139,6 @@ def get_stations(state: str = "Chandigarh", limit: int = 100):
     records = data.get("records", [])
 
     stations = {}
-    for row in records:
-        station_name = row.get("station")
         
     for row in records:
         station_name = row.get("station")
@@ -534,3 +548,36 @@ def generate_evidence_pdf(req: EvidencePDFRequest):
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=VAYU_Evidence_{req.report_id}.pdf"}
     )
+    
+class HealthAdvisoryRequest(BaseModel):
+    area: str
+    aqi: float
+    language: str = "English"
+    health_profile: Optional[str] = "None"
+
+@app.post("/health-advisory")
+def health_advisory(req: HealthAdvisoryRequest):
+    profile_context = ""
+    if req.health_profile and req.health_profile != "None":
+        profile_context = f"The reader has indicated a health profile of: {req.health_profile}. Tailor advice accordingly."
+
+    prompt = f"""You are a public health advisor communicating air quality guidance to a
+citizen in {req.area}, India. Current AQI is {req.aqi}.
+{profile_context}
+
+Write a health advisory in {req.language} only — do not include any English translation
+or transliteration if the language is not English. Keep it to 3-4 short sentences:
+(1) a plain-language description of how the air quality is right now,
+(2) specific practical precautions for outdoor activity,
+(3) a special note for the given health profile, if one was provided.
+Respond with ONLY the advisory text in {req.language}, no preamble, no markdown, no
+English commentary."""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt
+        )
+        return {"success": True, "advisory": response.text.strip(), "language": req.language}
+    except Exception as e:
+        return {"success": False, "advisory": "Health advisory temporarily unavailable. Please check back shortly.", "error": str(e)}

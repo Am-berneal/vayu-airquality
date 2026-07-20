@@ -10,6 +10,7 @@ import { API_BASE_URL, fetchWithRetry } from "../config";
 import SourceAttribution from "./SourceAttribution";
 import ComingSoon from "./ComingSoon";
 import MyReportsTracker from "./MyReportsTracker";
+import HealthAdvisory from "./HealthAdvisory";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -311,7 +312,11 @@ function DashboardShell({ role = "citizen" }) {
       );
     }
 
-    if (["Health Advisory", "Alerts & Subscriptions", "Community Impact", "Settings"].includes(activePage)) {
+    if (activePage === "Health Advisory") {
+      return <HealthAdvisory areaLabel={selectedArea || null} aqi={baselineAQI} />;
+    }
+
+    if (["Alerts & Subscriptions", "Community Impact", "Settings"].includes(activePage)) {
       return <ComingSoon title={activePage} />;
     }
 
