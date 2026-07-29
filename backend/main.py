@@ -175,6 +175,18 @@ def get_stations(state: str = "Chandigarh", limit: int = 100):
     result = {"count": len(stations), "stations": list(stations.values())}
     set_cache(cache_key, result)
     return result
+SUPPORTED_STATES = ["Chandigarh", "Punjab", "Haryana"]
+
+@app.get("/warm-cache")
+def warm_cache():
+    results = {}
+    for state in SUPPORTED_STATES:
+        try:
+            data = get_stations(state=state)
+            results[state] = data.get("count", "no data")
+        except Exception as e:
+            results[state] = f"error: {e}"
+    return {"warmed": results}
 
 
 @app.get("/weather")
@@ -581,3 +593,8 @@ English commentary."""
         return {"success": True, "advisory": response.text.strip(), "language": req.language}
     except Exception as e:
         return {"success": False, "advisory": "Health advisory temporarily unavailable. Please check back shortly.", "error": str(e)}
+    
+@app.delete("/reports/clear-all")
+def clear_all_reports():
+    reports_db.clear()
+    return {"success": True, "message": "All reports cleared"}
