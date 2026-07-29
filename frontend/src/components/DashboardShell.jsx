@@ -225,7 +225,7 @@ function DashboardMap({ activeBounds, isLocked, stations }) {
                 <div className="text-xs">
                   <strong>{ks.name}</strong>
                   <br/>
-                  AQI: {aqiValue ?? "Data unavailable"}
+                  AQI: {aqiValue ?? "Insufficient sensor data right now"}
                 </div>
               </Tooltip>
             </Circle>
