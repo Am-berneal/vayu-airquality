@@ -187,6 +187,14 @@ def warm_cache():
         except Exception as e:
             results[state] = f"error: {e}"
     return {"warmed": results}
+@app.get("/ping")
+def ping():
+    for state in SUPPORTED_STATES:
+        try:
+            get_stations(state=state)
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 @app.get("/weather")
