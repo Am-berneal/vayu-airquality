@@ -11,6 +11,9 @@ import SourceAttribution from "./SourceAttribution";
 import ComingSoon from "./ComingSoon";
 import MyReportsTracker from "./MyReportsTracker";
 import HealthAdvisory from "./HealthAdvisory";
+import AlertsSubscriptions from "./AlertsSubscriptions";
+import CommunityImpact from "./CommunityImpact";
+import Settings from "./Settings";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -227,7 +230,7 @@ function DashboardMap({ activeBounds, isLocked, stations }) {
                   <br/>
                   AQI: {aqiValue ?? "Insufficient sensor data right now"}
                 </div>
-              </Tooltip>
+              </Tooltip>  
             </Circle>
           );
         })}
@@ -316,8 +319,16 @@ function DashboardShell({ role = "citizen" }) {
       return <HealthAdvisory areaLabel={selectedArea || null} aqi={baselineAQI} />;
     }
 
-    if (["Alerts & Subscriptions", "Community Impact", "Settings"].includes(activePage)) {
-      return <ComingSoon title={activePage} />;
+    if (activePage === "Alerts & Subscriptions") {
+      return <AlertsSubscriptions areaLabel={selectedArea || null} currentAQI={baselineAQI} />;
+    }
+
+    if (activePage === "Community Impact") {
+      return <CommunityImpact />;
+    }
+
+    if (activePage === "Settings") {
+      return <Settings currentState={selectedState} currentDistrict={selectedDistrict} currentArea={selectedArea} />;
     }
 
     if (activePage === "Home" && role === "officer") {

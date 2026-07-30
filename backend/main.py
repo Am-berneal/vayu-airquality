@@ -606,3 +606,21 @@ English commentary."""
 def clear_all_reports():
     reports_db.clear()
     return {"success": True, "message": "All reports cleared"}
+@app.get("/community-impact")
+def community_impact():
+    total = len(reports_db)
+    by_area = {}
+    by_status = {}
+    for r in reports_db:
+        area = r.get("area") or "Unknown"
+        by_area[area] = by_area.get(area, 0) + 1
+        status = r.get("status") or "Pending"
+        by_status[status] = by_status.get(status, 0) + 1
+
+    area_breakdown = [{"area": k, "count": v} for k, v in sorted(by_area.items(), key=lambda x: -x[1])]
+
+    return {
+        "total_reports": total,
+        "by_area": area_breakdown,
+        "by_status": by_status,
+    }
