@@ -624,3 +624,165 @@ def community_impact():
         "by_area": area_breakdown,
         "by_status": by_status,
     }
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+landmark_cache = {}
+LANDMARK_CACHE_TTL = 86400  # 24 hours — land use barely changes
+
+
+def scan_area_landmarks(lat: float, lon: float, radius: int = 900):
+    cache_key = f"landmarks_{round(lat, 4)}_{round(lon, 4)}_{radius}"
+    if cache_key in landmark_cache:
+        ts, data = landmark_cache[cache_key]
+        if time.time() - ts < LANDMARK_CACHE_TTL:
+            return data
+
+    query = f"""
+[out:json][timeout:25];
+(
+  node["shop"](around:{radius},{lat},{lon});
+  node["amenity"~"marketplace|restaurant|cafe|fuel|bus_station|school|college|university|hospital|clinic"](around:{radius},{lat},{lon});
+  way["landuse"~"industrial|construction|retail|commercial"](around:{radius},{lat},{lon});
+  way["highway"~"^(primary|secondary|trunk|motorway)$"](around:{radius},{lat},{lon});
+  node["man_made"~"works|chimney"](around:{radius},{lat},{lon});
+);
+out center 300;
+"""
+
+    try:
+        resp = requests.post(
+            OVERPASS_URL,
+            data={"data": query},
+            timeout=30,
+            headers={"User-Agent": "VAYU-AirQuality/1.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        raw = resp.json()
+    except Exception:
+        return None
+
+    counts = {
+        "shops_and_markets": 0,
+        "restaurants_and_cafes": 0,
+        "industrial_sites": 0,
+        "construction_sites": 0,
+        "schools_and_colleges": 0,
+        "hospitals_and_clinics": 0,
+        "fuel_stations": 0,
+        "bus_stations": 0,
+        "major_roads": 0,
+    }
+    samples = {k: [] for k in counts}
+
+    def add(key, name):
+        counts[key] += 1
+        if name and name not in samples[key] and len(samples[key]) < 4:
+            samples[key].append(name)
+
+    for el in raw.get("elements", []):
+        tags = el.get("tags") or {}
+        name = tags.get("name")
+        amenity = tags.get("amenity")
+        landuse = tags.get("landuse")
+        highway = tags.get("highway")
+        man_made = tags.get("man_made")
+
+        if tags.get("shop") or amenity == "marketplace" or landuse in ("retail", "commercial"):
+            add("shops_and_markets", name)
+        elif amenity in ("restaurant", "cafe"):
+            add("restaurants_and_cafes", name)
+        elif landuse == "industrial" or man_made in ("works", "chimney"):
+            add("industrial_sites", name)
+        elif landuse == "construction":
+            add("construction_sites", name)
+        elif amenity in ("school", "college", "university"):
+            add("schools_and_colleges", name)
+        elif amenity in ("hospital", "clinic"):
+            add("hospitals_and_clinics", name)
+        elif amenity == "fuel":
+            add("fuel_stations", name)
+        elif amenity == "bus_station":
+            add("bus_stations", name)
+        elif highway:
+            add("major_roads", name)
+
+    result = {
+        "counts": counts,
+        "samples": {k: v for k, v in samples.items() if v},
+        "total_features": sum(counts.values()),
+        "radius_m": radius,
+    }
+    landmark_cache[cache_key] = (time.time(), result)
+    return result
+
+
+class AttributionRequestV2(BaseModel):
+    area: str
+    aqi: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    wind_speed: Optional[float] = 3.0
+
+
+@app.post("/source-attribution-scan")
+def source_attribution_scan(req: AttributionRequestV2):
+    landmarks = None
+    if req.latitude is not None and req.longitude is not None:
+        landmarks = scan_area_landmarks(req.latitude, req.longitude)
+
+    if landmarks and landmarks["total_features"] > 0:
+        c = landmarks["counts"]
+        s = landmarks["samples"]
+
+        def line(label, key):
+            names = f" (e.g. {', '.join(s[key])})" if s.get(key) else ""
+            return f"- {label}: {c[key]}{names}"
+
+        landmark_block = "\n".join([
+            line("Shops, markets and retail areas", "shops_and_markets"),
+            line("Restaurants and cafes", "restaurants_and_cafes"),
+            line("Industrial sites / works", "industrial_sites"),
+            line("Active construction sites", "construction_sites"),
+            line("Schools and colleges", "schools_and_colleges"),
+            line("Hospitals and clinics", "hospitals_and_clinics"),
+            line("Fuel stations", "fuel_stations"),
+            line("Bus stations", "bus_stations"),
+            line("Major roads", "major_roads"),
+        ])
+        data_note = f"A geospatial scan of a {landmarks['radius_m']}m radius around this area found these real mapped land-use features:\n{landmark_block}"
+    else:
+        data_note = "No detailed land-use scan data was available for this area, so base your estimate on the AQI, wind conditions, and typical Indian urban sector characteristics."
+
+    prompt = f"""You are an air quality source attribution analyst for {req.area}, India.
+Current AQI: {req.aqi}. Wind speed: {req.wind_speed} m/s.
+
+{data_note}
+
+Using this evidence, estimate the pollution source contribution breakdown.
+Respond ONLY with valid JSON (no markdown, no code fences) with exactly these fields:
+{{"industrial_percent": number, "vehicular_percent": number, "construction_percent": number, "other_percent": number, "technical_summary": "3-4 sentences for a regulatory officer that EXPLICITLY cites the specific feature counts found above and explains why each source category received its percentage — e.g. 'the high vehicular share reflects N shops/markets and N major roads driving dense local traffic'", "plain_summary": "2 simple sentences for a citizen with no technical background, mentioning the kinds of places nearby in everyday language"}}
+The four percent fields must sum to exactly 100."""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.lower().startswith("json"):
+                text = text[4:]
+        result = json.loads(text.strip())
+        return {"success": True, "landmarks": landmarks, **result}
+    except Exception as e:
+        return {
+            "success": False,
+            "landmarks": landmarks,
+            "industrial_percent": 25, "vehicular_percent": 45,
+            "construction_percent": 15, "other_percent": 15,
+            "technical_summary": "Attribution analysis is temporarily unavailable. Please review the scanned land-use features manually.",
+            "plain_summary": "We couldn't complete the analysis right now — please check back shortly.",
+            "error": str(e),
+        }

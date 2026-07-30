@@ -311,7 +311,12 @@ function DashboardShell({ role = "citizen" }) {
 
     if (activePage === "Source Attribution" || activePage === "Why Is My Area Polluted") {
       return (
-        <SourceAttribution areaLabel={selectedArea || null} aqi={baselineAQI} role={role} />
+        <SourceAttribution
+          areaLabel={selectedArea || null}
+          aqi={baselineAQI}
+          coords={selectedAreaData?.coords}
+          role={role}
+        />
       );
     }
 
