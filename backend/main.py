@@ -640,13 +640,14 @@ def scan_area_landmarks(lat: float, lon: float, radius: int = 900):
     query = f"""
 [out:json][timeout:25];
 (
-  node["shop"](around:{radius},{lat},{lon});
-  node["amenity"~"marketplace|restaurant|cafe|fuel|bus_station|school|college|university|hospital|clinic"](around:{radius},{lat},{lon});
-  way["landuse"~"industrial|construction|retail|commercial"](around:{radius},{lat},{lon});
+  nwr["shop"](around:{radius},{lat},{lon});
+  nwr["amenity"~"marketplace|restaurant|cafe|fuel|bus_station|school|college|university|hospital|clinic"](around:{radius},{lat},{lon});
+  nwr["landuse"~"industrial|construction|retail|commercial"](around:{radius},{lat},{lon});
+  nwr["building"~"industrial|warehouse|commercial|retail|school|hospital|university"](around:{radius},{lat},{lon});
   way["highway"~"^(primary|secondary|trunk|motorway)$"](around:{radius},{lat},{lon});
-  node["man_made"~"works|chimney"](around:{radius},{lat},{lon});
+  nwr["man_made"~"works|chimney"](around:{radius},{lat},{lon});
 );
-out center 300;
+out center 400;
 """
 
     try:
@@ -687,18 +688,19 @@ out center 300;
         landuse = tags.get("landuse")
         highway = tags.get("highway")
         man_made = tags.get("man_made")
+        building = tags.get("building")
 
-        if tags.get("shop") or amenity == "marketplace" or landuse in ("retail", "commercial"):
+        if tags.get("shop") or amenity == "marketplace" or landuse in ("retail", "commercial") or building in ("commercial", "retail"):
             add("shops_and_markets", name)
         elif amenity in ("restaurant", "cafe"):
             add("restaurants_and_cafes", name)
-        elif landuse == "industrial" or man_made in ("works", "chimney"):
+        elif landuse == "industrial" or man_made in ("works", "chimney") or building in ("industrial", "warehouse"):
             add("industrial_sites", name)
         elif landuse == "construction":
             add("construction_sites", name)
-        elif amenity in ("school", "college", "university"):
+        elif amenity in ("school", "college", "university") or building in ("school", "university"):
             add("schools_and_colleges", name)
-        elif amenity in ("hospital", "clinic"):
+        elif amenity in ("hospital", "clinic") or building == "hospital":
             add("hospitals_and_clinics", name)
         elif amenity == "fuel":
             add("fuel_stations", name)
