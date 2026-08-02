@@ -13,6 +13,7 @@ import MyReportsTracker from "./MyReportsTracker";
 import HealthAdvisory from "./HealthAdvisory";
 import AlertsSubscriptions from "./AlertsSubscriptions";
 import CommunityImpact from "./CommunityImpact";
+import SatelliteContext from "./SatelliteContext";
 import Settings from "./Settings";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -322,6 +323,9 @@ function DashboardShell({ role = "citizen" }) {
 
     if (activePage === "Health Advisory") {
       return <HealthAdvisory areaLabel={selectedArea || null} aqi={baselineAQI} />;
+    }
+    if (activePage === "Satellite Context") {
+      return <SatelliteContext state={selectedState} />;
     }
 
     if (activePage === "Alerts & Subscriptions") {

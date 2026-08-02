@@ -85,6 +85,8 @@ OWM_API_KEY = os.getenv("OWM_API_KEY")
 WAQI_TOKEN = os.getenv("WAQI_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CPCB_BASE_URL = "https://api.data.gov.in/resource/3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
+COPERNICUS_CLIENT_ID = os.getenv("COPERNICUS_CLIENT_ID")
+COPERNICUS_CLIENT_SECRET = os.getenv("COPERNICUS_CLIENT_SECRET")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -788,3 +790,155 @@ The four percent fields must sum to exactly 100."""
             "plain_summary": "We couldn't complete the analysis right now — please check back shortly.",
             "error": str(e),
         }
+CDSE_TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+CDSE_STATS_URL = "https://sh.dataspace.copernicus.eu/api/v1/statistics"
+
+_cdse_token = {"value": None, "expires": 0}
+
+
+def get_cdse_token():
+    if _cdse_token["value"] and time.time() < _cdse_token["expires"] - 60:
+        return _cdse_token["value"]
+    if not COPERNICUS_CLIENT_ID or not COPERNICUS_CLIENT_SECRET:
+        return None
+    try:
+        resp = requests.post(
+            CDSE_TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": COPERNICUS_CLIENT_ID,
+                "client_secret": COPERNICUS_CLIENT_SECRET,
+            },
+            timeout=20,
+        )
+        if resp.status_code != 200:
+            print("CDSE TOKEN ERROR:", resp.status_code, resp.text[:300])
+            return None
+        j = resp.json()
+        _cdse_token["value"] = j.get("access_token")
+        _cdse_token["expires"] = time.time() + j.get("expires_in", 600)
+        return _cdse_token["value"]
+    except Exception as e:
+        print("CDSE TOKEN EXCEPTION:", e)
+        return None
+
+
+CITY_BBOX = {
+    "Chandigarh": [76.68, 30.66, 76.85, 30.79],
+    "Punjab": [73.9, 29.5, 76.9, 32.5],
+    "Haryana": [74.5, 27.6, 77.6, 30.9],
+}
+
+satellite_cache = {}
+SATELLITE_CACHE_TTL = 10800  # 3 hours
+
+
+@app.get("/satellite-no2")
+def satellite_no2(state: str = "Chandigarh"):
+    cache_key = f"sat_{state}"
+    if cache_key in satellite_cache:
+        ts, data = satellite_cache[cache_key]
+        if time.time() - ts < SATELLITE_CACHE_TTL:
+            return data
+
+    bbox = CITY_BBOX.get(state)
+    if not bbox:
+        return {"available": False, "reason": "No bounding box configured for this region."}
+
+    token = get_cdse_token()
+    if not token:
+        return {"available": False, "reason": "Satellite service credentials not configured or authentication failed."}
+
+    now = datetime.now()
+    start = (now - timedelta(days=5)).strftime("%Y-%m-%dT00:00:00Z")
+    end = now.strftime("%Y-%m-%dT23:59:59Z")
+
+    evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{bands: ["NO2", "dataMask"]}],
+    output: [
+      {id: "no2", bands: 1, sampleType: "FLOAT32"},
+      {id: "dataMask", bands: 1}
+    ]
+  };
+}
+function evaluatePixel(sample) {
+  return {no2: [sample.NO2], dataMask: [sample.dataMask]};
+}
+"""
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": bbox,
+                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+            },
+            "data": [{
+                "type": "sentinel-5p-l2",
+                "dataFilter": {"timeRange": {"from": start, "to": end}},
+            }],
+        },
+        "aggregation": {
+            "timeRange": {"from": start, "to": end},
+            "aggregationInterval": {"of": "P1D"},
+            "evalscript": evalscript,
+            "resx": 0.05,
+            "resy": 0.05,
+        },
+    }
+
+    try:
+        resp = requests.post(
+            CDSE_STATS_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=45,
+        )
+        if resp.status_code != 200:
+            print("CDSE STATS ERROR:", resp.status_code, resp.text[:500])
+            return {"available": False, "reason": f"Satellite service returned status {resp.status_code}."}
+        raw = resp.json()
+    except Exception as e:
+        return {"available": False, "reason": f"Could not reach satellite service: {e}"}
+
+    series = []
+    for item in raw.get("data", []):
+        interval = item.get("interval", {})
+        stats = item.get("outputs", {}).get("no2", {}).get("bands", {}).get("B0", {}).get("stats", {})
+        mean = stats.get("mean")
+        if mean is None:
+            continue
+        series.append({
+            "date": (interval.get("from") or "")[:10],
+            "mean_no2": round(mean * 1e6, 3),
+        })
+
+    if not series:
+        return {"available": False, "reason": "No cloud-free satellite passes over this region in the last 5 days."}
+
+    values = [s["mean_no2"] for s in series]
+    latest = series[-1]
+    avg = sum(values) / len(values)
+
+    if latest["mean_no2"] > avg * 1.15:
+        trend = "Elevated"
+    elif latest["mean_no2"] < avg * 0.85:
+        trend = "Below average"
+    else:
+        trend = "Typical"
+
+    result = {
+        "available": True,
+        "region": state,
+        "scale_note": "Regional scale — Sentinel-5P resolution is approximately 5.5km x 3.5km per pixel, which covers an entire city district. This layer provides city-wide atmospheric context and cannot distinguish individual sectors.",
+        "series": series,
+        "latest": latest,
+        "period_average": round(avg, 3),
+        "trend": trend,
+        "unit": "µmol/m² (tropospheric NO₂ column)",
+        "source": "Copernicus Sentinel-5P TROPOMI",
+    }
+    satellite_cache[cache_key] = (time.time(), result)
+    return result

@@ -8,6 +8,7 @@ const citizenMenu = [
   { label: "Why Is My Area Polluted", icon: Satellite },
   { label: "Alerts & Subscriptions", icon: Bell },
   { label: "Community Impact", icon: Trophy },
+  { label: "Satellite Context", icon: Satellite },
   { label: "Settings", icon: Settings },
 ];
 
@@ -15,6 +16,7 @@ const officerMenu = [
   { label: "Home", icon: Home },
   { label: "Predictive Analysis", icon: TrendingUp },
   { label: "Source Attribution", icon: Satellite },
+  { label: "Satellite Context", icon: Satellite },
   { label: "Settings", icon: Settings },
 ];
 
