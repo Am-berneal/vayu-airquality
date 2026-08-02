@@ -850,7 +850,7 @@ def satellite_no2(state: str = "Chandigarh"):
         return {"available": False, "reason": "Satellite service credentials not configured or authentication failed."}
 
     now = datetime.now()
-    start = (now - timedelta(days=5)).strftime("%Y-%m-%dT00:00:00Z")
+    start = (now - timedelta(days=10)).strftime("%Y-%m-%dT00:00:00Z")
     end = now.strftime("%Y-%m-%dT23:59:59Z")
 
     evalscript = """

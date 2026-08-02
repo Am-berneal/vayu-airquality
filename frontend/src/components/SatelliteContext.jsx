@@ -80,12 +80,24 @@ function SatelliteContext({ state }) {
             </div>
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <p className="text-2xl font-bold text-gray-800">{data.period_average}</p>
-              <p className="text-xs text-gray-400">5-day regional average</p>
+              <p className="text-xs text-gray-400">
+                {data.series.length > 1
+                  ? `Average of ${data.series.length} recent passes`
+                  : "Single available observation"}
+              </p>
             </div>
             <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col justify-center">
-              <TrendBadge trend={data.trend} />
-              <p className="text-xs text-gray-400 mt-2">vs. recent baseline</p>
-            </div>
+              {data.series.length > 1 ? (
+                <>
+                  <TrendBadge trend={data.trend} />
+                  <p className="text-xs text-gray-400 mt-2">vs. recent baseline</p>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Only one cloud-free pass available — trend comparison needs multiple observations.
+                </p>
+              )}
+            </div> 
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
