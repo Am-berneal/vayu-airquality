@@ -903,17 +903,34 @@ function evaluatePixel(sample) {
     except Exception as e:
         return {"available": False, "reason": f"Could not reach satellite service: {e}"}
 
+    def extract_mean(item):
+        outputs = item.get("outputs", {})
+        for out_key in outputs:
+            bands = outputs[out_key].get("bands", {})
+            for band_key in bands:
+                stats = bands[band_key].get("stats", {})
+                m = stats.get("mean")
+                if m is None:
+                    continue
+                if isinstance(m, (list, tuple)):
+                    m = m[0] if m else None
+                if isinstance(m, (int, float)):
+                    return float(m)
+        return None
+
     series = []
     for item in raw.get("data", []):
         interval = item.get("interval", {})
-        stats = item.get("outputs", {}).get("no2", {}).get("bands", {}).get("B0", {}).get("stats", {})
-        mean = stats.get("mean")
+        mean = extract_mean(item)
         if mean is None:
             continue
         series.append({
             "date": (interval.get("from") or "")[:10],
             "mean_no2": round(mean * 1e6, 3),
         })
+
+    if not series:
+        print("CDSE RAW STRUCTURE SAMPLE:", str(raw)[:800])
 
     if not series:
         return {"available": False, "reason": "No cloud-free satellite passes over this region in the last 5 days."}
